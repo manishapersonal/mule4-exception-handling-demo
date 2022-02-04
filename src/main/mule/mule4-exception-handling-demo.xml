@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core" xmlns:db="http://www.mulesoft.org/schema/mule/db"
+	xmlns:validation="http://www.mulesoft.org/schema/mule/validation"
+	xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+http://www.mulesoft.org/schema/mule/validation http://www.mulesoft.org/schema/mule/validation/current/mule-validation.xsd
+http://www.mulesoft.org/schema/mule/db http://www.mulesoft.org/schema/mule/db/current/mule-db.xsd
+http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd">
+	<http:listener-config name="HTTP_Listener_config" doc:name="HTTP Listener config" doc:id="19f50e91-14f4-47ff-ad0c-95fdc10fb2c8" >
+		<http:listener-connection host="0.0.0.0" port="${http.port}" />
+	</http:listener-config>
+	<validation:config name="Validation_Config" doc:name="Validation Config" doc:id="505f9f14-6867-4088-bc60-fa13ede4b725" />
+	<sub-flow name="fetch-employee-detailsSub-Flow" doc:id="8878c56b-c1e1-4a1e-860e-4b762b74ddc5" >
+		<try doc:name="Try" doc:id="cc90a7d6-001f-4bc2-b50e-98e669d13e4c" >
+			<logger level="INFO" doc:name="Logger" doc:id="6c37a58a-15c2-4ece-819c-d3c9585a36d3" message="Start DB Call" />
+			<db:select doc:name="Select" doc:id="fc039a59-c722-430d-a46f-d5c21cb449d7" config-ref="Database_Config">
+			<db:sql><![CDATA[SELECT [Emp_ID]
+      ,[Name_Prefix]
+      ,[First_Name]
+      ,[Middle_Initial]
+      ,[Last_Name]
+      ,[Gender]
+      ,[E_Mail]
+      ,[Date_of_Birth]
+  FROM [dbo].[employee] where Emp_ID= :emp_id]]></db:sql>
+			<db:input-parameters><![CDATA[#[{
+	emp_id: attributes.queryParams.empid
+
+}]]]></db:input-parameters>
+		</db:select>
+			<logger level="INFO" doc:name="Logger" doc:id="c1bc2ea5-ba5f-41eb-9122-b02928b88db7" message="End DB Call" />
+			<error-handler >
+				<on-error-continue enableNotifications="true" logException="true" doc:name="On Error Continue" doc:id="5ebfac6f-72b3-4382-bd77-91a8e6be17d2" type="ANY">
+					<logger level="INFO" doc:name="Logger" doc:id="6ec4685d-43c3-4229-886c-febbb36ae20e" message="db error occured"/>
+				</on-error-continue>
+			</error-handler>
+		</try>
+	</sub-flow>
+	<flow name="mule4-exception-handling-demoFlow" doc:id="8d9bbcd9-ba77-4c72-9c13-73dc422b2ed7" >
+		<http:listener doc:name="GET :/employees" doc:id="dc1cb1c6-7517-4589-be7f-9077edc40ee2" config-ref="HTTP_Listener_config" path="/employees">
+			<http:error-response statusCode="#[vars.statusCode]" reasonPhrase="#[vars.reasonPhrase]">
+				<http:body ><![CDATA[#[payload]]]></http:body>
+			</http:error-response>
+		</http:listener>
+		<set-variable value="#[attributes.queryParams.empid]" doc:name="empid" doc:id="bc55181b-4509-4efb-b4c6-29c0c93d1ae6" variableName="empid"/>
+		<validation:is-number doc:name="Is number" doc:id="42768100-cf80-4fc9-be0d-f1d424fd75ff" config-ref="Validation_Config" numberType="INTEGER" value="#[attributes.queryParams.empid]" message="empid should be number"/>
+		<flow-ref doc:name="fetch-employee-detailsSub-Flow" doc:id="f14cd302-f6d1-45da-8647-00907720557f" name="fetch-employee-detailsSub-Flow" />
+		<choice doc:name="Choice" doc:id="a3158be0-a9d0-4748-b9de-dfe552a46d7c" >
+			<when expression="#[!isEmpty(payload) and sizeOf(payload) &gt; 0]">
+				<ee:transform doc:name="Transform Message" doc:id="b8bd6445-facc-42e4-bf89-eb0f672b363f">
+			<ee:message>
+				<ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{
+	EmployeeID: payload[0].Emp_ID,
+	EmployeeName: payload[0].First_Name ++ ' ' ++ payload[0].Last_Name	
+	
+}]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+			</when>
+			<otherwise >
+				<raise-error doc:name="Raise error" doc:id="820694be-84e6-4734-aba6-a85bbb056bd0" type="EMP:NOT_FOUND" description="#['employee not found with empid: ' ++ vars.empid]" />
+			</otherwise>
+		</choice>
+	</flow>
+</mule>
